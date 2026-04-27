@@ -40,7 +40,7 @@ Zeigt das vollständige Koordinator-UI: oben die **Koordinator-API-Buttons**
 (`GET /map`, `GET /status`, `POST /robot`, `POST /robot-cleaner`,
 `POST /robot-repair`, `POST /event`) und das **Response-Feld**, links die
 **Live-Map** als 20×20-Raster mit allen aktiven Bots, rechts die Listen
-**Roboter** und **Probleme**, unten die **Legende** (Defekt ❌, Schmutz 👹,
+**Roboter** und **Probleme**, unten die **Legende** (Defekt , Schmutz ,
 Detector, Cleaner, Repair).
 
 ![Dashboard – Hauptansicht](docs/images/dashboard_overview.png)
@@ -56,8 +56,7 @@ arbeitet also an einem Problem.
 ![Roboter-Status](docs/images/dashboard_robots.png)
 
 ### 1.3 Problem-Lifecycle (Sequenzdiagramm)
-Statt eines Screenshots ist hier der vollständige Nachrichtenfluss eines
-einzelnen Problems abgebildet — von der Erkennung bis zum Abschluss:
+vollständiger Nachrichtenfluss eines einzelenen Problems, von der Erkennung bis zum Abschluss:
 
 ```mermaid
 sequenceDiagram
@@ -99,8 +98,7 @@ sequenceDiagram
 - Der **Koordinator hört nur passiv mit** (`robot/status/#`) und füttert damit den Watchdog.
 
 ### 1.4 Watchdog & Recovery (Code & Log)
-Statt eines Screenshots zeigen wir die kritische Stelle direkt im Code –
-[backend/coordinator.py:138-177](backend/coordinator.py#L138-L177):
+Code – [backend/coordinator.py:138-177](backend/coordinator.py#L138-L177):
 
 ```python
 def watchdog_loop(timeout_sec=10):
@@ -495,6 +493,6 @@ docker compose logs -f vs-cleaner
 ## 13. Autoren & Lizenz
 
 **Modul:** Verteilte Systeme – Praktikum
-**Autor:innen:** Projektgruppe Di3x_8
+**Autoren** Projektgruppe Di3x_8: Chatchai Sirichot, Osman Cicek
 
 Dieses Projekt ist im akademischen Kontext entstanden und steht ausschließlich zu Lehr- und Lernzwecken zur Verfügung.
