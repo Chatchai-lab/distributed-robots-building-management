@@ -35,41 +35,149 @@
 > Die folgenden Screenshots werden in [docs/images/](docs/images/) abgelegt und unten eingebunden.
 > **Aktuell sind dies Platzhalter** – bitte die echten Bilder mit den vorgesehenen Dateinamen ergänzen.
 
-### 1.1 Web-Dashboard – Hauptansicht der Karte
-*Zeigen: 2D-Gebäudekarte mit allen Robotern, offenen/zugewiesenen Problemen und Legende.*
+### 1.1 Web-Dashboard – Hauptansicht
+Zeigt das vollständige Koordinator-UI: oben die **Koordinator-API-Buttons**
+(`GET /map`, `GET /status`, `POST /robot`, `POST /robot-cleaner`,
+`POST /robot-repair`, `POST /event`) und das **Response-Feld**, links die
+**Live-Map** als 20×20-Raster mit allen aktiven Bots, rechts die Listen
+**Roboter** und **Probleme**, unten die **Legende** (Defekt ❌, Schmutz 👹,
+Detector, Cleaner, Repair).
 
 ![Dashboard – Hauptansicht](docs/images/dashboard_overview.png)
-<!-- TODO: Screenshot speichern unter docs/images/dashboard_overview.png -->
 
 ### 1.2 Roboter-Status-Tabelle
-*Zeigen: Liste aller registrierten Bots mit Rolle (Detector/Cleaner/Repair), Status (IDLE/BUSY) und letzter Position.*
+Ausschnitt der Roboter-Liste aus dem Dashboard. Pro Bot ist
+**ID**, **Rolle** (`detector` / `cleaner` / `repair`), **aktuelle
+Position** `@ (x, y)` und **Status** sichtbar. Detector-Bots stehen auf
+`ACTIVE` (sie bewegen sich permanent), Service-Bots wechseln zwischen
+`IDLE` und `BUSY` — im Beispiel ist `cleaner #8 @ (9,10)` gerade BUSY,
+arbeitet also an einem Problem.
 
 ![Roboter-Status](docs/images/dashboard_robots.png)
-<!-- TODO: Screenshot speichern unter docs/images/dashboard_robots.png -->
 
-### 1.3 Live-Problem-Lifecycle
-*Zeigen: Ein Problem im Verlauf – Erkennung durch Detector → Claim → Zuweisung → Bearbeitung → Abschluss.*
+### 1.3 Problem-Lifecycle (Sequenzdiagramm)
+Statt eines Screenshots ist hier der vollständige Nachrichtenfluss eines
+einzelnen Problems abgebildet — von der Erkennung bis zum Abschluss:
 
-![Problem-Lifecycle](docs/images/problem_lifecycle.png)
-<!-- TODO: Screenshot speichern unter docs/images/problem_lifecycle.png -->
+```mermaid
+sequenceDiagram
+    autonumber
+    participant D as Detector
+    participant B as MQTT-Broker
+    participant C1 as Cleaner #1
+    participant C2 as Cleaner #2
+    participant K as Koordinator (Watchdog)
 
-### 1.4 Watchdog & Recovery
-*Zeigen: Dashboard im Moment, in dem ein Bot ausfällt und sein Task neu vergeben wird (`round` erhöht).*
+    D->>B: publish problems/new<br/>{id, type:SCHMUTZ, x, y, round:1}
+    B-->>C1: deliver problems/new
+    B-->>C2: deliver problems/new
 
-![Watchdog Recovery](docs/images/watchdog_recovery.png)
-<!-- TODO: Screenshot speichern unter docs/images/watchdog_recovery.png -->
+    Note over C1,C2: lokale Prüfung:<br/>kann ich SCHMUTZ + bin IDLE?
 
-### 1.5 Docker-Compose – laufende Container
-*Zeigen: Output von `docker compose ps` mit allen Services (`vs-mqtt-broker`, `vs-coordinator`, 4× Detector, 2× Cleaner, 2× Repair).*
+    C1->>B: tasks/claim/<id> {dist:3, round:1}
+    C2->>B: tasks/claim/<id> {dist:7, round:1}
 
-![Docker Compose ps](docs/images/docker_compose_ps.png)
-<!-- TODO: Screenshot speichern unter docs/images/docker_compose_ps.png -->
+    Note over C1,C2: kurzes Wartefenster (0.3s)<br/>jeder entscheidet lokal:<br/>min(dist) → bei Gleichstand min(robot_id)
+
+    C1->>B: tasks/assigned/<id> {robot_id:C1}
+    Note over C1: STATUS_IDLE → STATUS_BUSY
+
+    loop BFS-Pfad zum Ziel
+        C1->>B: robot/status/C1 {x, y, BUSY}
+        B-->>K: robot/status/C1 (Heartbeat)
+    end
+
+    C1->>B: tasks/done/<id>
+    Note over C1: STATUS_BUSY → STATUS_IDLE
+    C1->>B: robot/status/C1 {IDLE}
+```
+
+**Was hier sichtbar wird:**
+
+- Der **Detector kennt keine Service-Bots** — er publiziert blind ins Topic.
+- Die **Leader Election ist symmetrisch**: alle Bots empfangen die gleichen Claims und kommen lokal zum gleichen Ergebnis (kein Koordinator-Eingriff).
+- Der **Koordinator hört nur passiv mit** (`robot/status/#`) und füttert damit den Watchdog.
+
+### 1.4 Watchdog & Recovery (Code & Log)
+Statt eines Screenshots zeigen wir die kritische Stelle direkt im Code –
+[backend/coordinator.py:138-177](backend/coordinator.py#L138-L177):
+
+```python
+def watchdog_loop(timeout_sec=10):
+    while True:
+        time.sleep(2)
+        now = time.time()
+
+        with state_lock:
+            for pid, meta in list(assigned.items()):
+                rid  = meta["robot_id"]
+                last = last_seen.get(rid)
+                if last is None:
+                    continue
+
+                # bot dead
+                if now - last > timeout_sec:
+                    print(f"[WATCHDOG] robot {rid} timeout "
+                          f"-> release problem {pid}")
+
+                    problems[pid]["status"] = "OPEN"
+                    problems[pid].pop("assigned_robot", None)
+                    problems[pid]["round"] = problems[pid].get("round", 1) + 1
+
+                    payload = {
+                        "id":     problems[pid]["id"],
+                        "type":   problems[pid]["type"],
+                        "x":      problems[pid]["x"],
+                        "y":      problems[pid]["y"],
+                        "round":  problems[pid]["round"],
+                        "reason": "watchdog_timeout",
+                    }
+                    mqtt_client.publish("problems/new", json.dumps(payload))
+                    assigned.pop(pid, None)
+```
+
+**Beispiel-Log bei einem ausgefallenen Bot:**
+
+```text
+[WATCHDOG] robot 5 timeout -> release problem a3f1-...-...-...
+[MQTT] publish problems/new {"id":"a3f1...","type":"SCHMUTZ","x":4,"y":7,"round":2,"reason":"watchdog_timeout"}
+[CLAIM]  bot=8 problem=a3f1... dist=5
+[WINNER] Ich übernehme Problem a3f1...
+[MQTT] publish tasks/assigned/a3f1... {"robot_id":8,"round":2,...}
+```
+
+**Zentrale Mechanismen:**
+
+- **Failure detection per Heartbeat-Timeout** (10 s) – kein perfektes Failure-Detection-Modell, aber gut genug.
+- **`round` wird inkrementiert** → alte Claims aus Runde 1 werden von allen Bots stillschweigend verworfen (`if c["round"] != current_round: ignore`).
+- **Self-healing**: kein menschlicher Eingriff, kein zentraler Failover-Master nötig.
+
+Reproduzierbar mit
+[tests/aufgabe5.py::test_system_robustness_watchdog_auto](tests/aufgabe5.py),
+das per `docker stop <container>` einen Ausfall erzwingt.
+
+### 1.5 Docker – laufende Container
+Output von `docker ps` mit dem vollständigen Stack: **4× `docker-vs-detector`**,
+**2× `docker-vs-cleaner`**, **2× `docker-vs-repair`**, der **MQTT-Broker
+`eclipse-mosquitto:latest`** auf Port `1883` und der **`docker-vs-coordinator`**.
+Belegt, dass alle 10 Container gleichzeitig laufen — Voraussetzung für die
+dezentrale Koordination.
+
+![Docker Container](docs/images/docker_compose_ps.png)
 
 ### 1.6 MQTT-Verkehr (mosquitto_sub)
-*Zeigen: Live-Auszug der Topics `problems/new`, `tasks/claim/#`, `tasks/assigned/#`, `tasks/done/#`.*
+Live-Mitschnitt aller MQTT-Nachrichten via
+`docker exec -it vs-mqtt-broker mosquitto_sub -v -t '#'`. Sichtbar sind die
+Topics, die den dezentralen Koordinationsfluss tragen:
+
+- `problems/new` – Detector veröffentlicht ein neu erkanntes Problem
+- `tasks/claim/<problem_id>` – jeder geeignete Service-Bot bewirbt sich (mit Distanz, `round`)
+- `tasks/assigned/<problem_id>` – der Gewinner verkündet die Zuweisung
+- `tasks/done/<problem_id>` – Abschlussmeldung nach Bearbeitung
+
+Damit ist nachgewiesen, dass die Komponenten **ausschließlich über MQTT** kommunizieren – kein zentraler Dispatcher, keine Bot-zu-Bot-Direktverbindung.
 
 ![MQTT Topics](docs/images/mqtt_traffic.png)
-<!-- TODO: Screenshot speichern unter docs/images/mqtt_traffic.png -->
 
 ---
 
@@ -98,42 +206,7 @@ Im Fokus stehen die typischen Konzepte verteilter Systeme:
 
 ## 3. System-Architektur
 
-```mermaid
-flowchart LR
-    subgraph Clients["Browser"]
-        UI["Web-Dashboard<br/>(index.html)"]
-    end
-
-    subgraph Coordinator["vs-coordinator (Python)"]
-        HTTP["HTTP-Server<br/>:8080"]
-        WD["Watchdog"]
-        MAP["Karten- &<br/>Robot-Registry"]
-    end
-
-    subgraph Bots["Roboter-Container"]
-        D1["Detector × 4"]
-        C1["Cleaner × 2"]
-        R1["Repair × 2"]
-    end
-
-    BROKER(["MQTT-Broker<br/>Mosquitto :1883"])
-
-    UI -- "GET /map, /status" --> HTTP
-    D1 -- "POST /robot" --> HTTP
-    C1 -- "POST /robot-cleaner" --> HTTP
-    R1 -- "POST /robot-repair" --> HTTP
-
-    D1 -- "publish problems/new" --> BROKER
-    BROKER -- "subscribe problems/new" --> C1
-    BROKER -- "subscribe problems/new" --> R1
-
-    C1 -- "claim / assigned / done" --> BROKER
-    R1 -- "claim / assigned / done" --> BROKER
-    BROKER -- "robot/status/#" --> WD
-
-    HTTP --- MAP
-    WD --- MAP
-```
+![System-Architektur](docs/images/System-Architektur.png)
 
 **Kommunikationsmuster:**
 
