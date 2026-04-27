@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <title>Koordinator API</title>
+  <style>
+    body {
+      font-family: monospace;
+      background: #0a0a0a;
+      color: #eee;
+      padding: 1rem;
+    }
+
+    h2, h3 {
+      margin-bottom: 0.5rem;
+    }
+
+    button {
+      margin: 0.3rem;
+      padding: 0.5rem 1rem;
+      cursor: pointer;
+      background: #222;
+      color: #eee;
+      border: 1px solid #555;
+      border-radius: 4px;
+    }
+
+    button:hover {
+      background: #444;
+    }
+
+    #output {
+      background: #111;
+      padding: 1rem;
+      border-radius: 6px;
+      white-space: pre-wrap;
+      margin: 1rem 0 2rem 0;
+      border: 1px solid #333;
+      box-shadow: 0 0 8px #111;
+      width: 520px;
+      max-height: 250px;
+      overflow-y: auto;
+    }
+
+    .layout {
+      display: flex;
+      gap: 2rem;
+      align-items: flex-start;
+      flex-wrap: nowrap;
+    }
+
+    #grid {
+      display: grid;
+      grid-template-columns: repeat(20, 24px);
+      grid-auto-rows: 24px;
+      gap: 2px;
+      user-select: none;
+      width: 520px;
+    }
+
+    .cell {
+      width: 24px;
+      height: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 3px;
+      font-size: 14px;
+    }
+
+    .wall { background: #444; }
+    .free { background: #1a1a1a; }
+
+    .panel {
+      min-width: 320px;
+      max-width: 320px;
+    }
+
+    pre {
+      background: #111;
+      padding: 0.5rem;
+      border-radius: 6px;
+      border: 1px solid #333;
+      max-height: 180px;
+      overflow-y: auto;
+      font-size: 13px;
+    }
+
+    .legend {
+      margin-top: 1rem;
+      font-size: 13px;
+      color: #aaa;
+      line-height: 1.5;
+    }
+  </style>
+</head>
+
+<body>
+  <h2>Koordinator API</h2>
+
+  <button onclick="callGetMap()">GET /map</button>
+  <button onclick="callGetStatus()">GET /status</button>
+  <button onclick="callPostRobot()">POST /robot</button>
+  <button onclick="callPostCleaner()">POST /robot-cleaner</button>
+  <button onclick="callPostRepair()">POST /robot-repair</button>
+  <button onclick="sendTestEvent()">POST /event</button>
+
+  <h3>Response</h3>
+  <pre id="output">Noch keine Anfrage gesendet</pre>
+
+  <div class="layout">
+    <div>
+      <h3>Live Map</h3>
+      <div id="robotsSummary"></div>
+      <div id="grid"></div>
+
+      <div class="legend">
+        <b>Legende:</b><br>
+        ❌ Defekt (DEFEKT)<br>
+        💩 Schmutz (SCHMUTZ)<br>
+        🤖 Detector<br>
+        🧼 Cleaner<br>
+        🛠 Repair
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3>Roboter</h3>
+      <pre id="robotsList">Noch keine Roboter</pre>
+
+      <h3>Probleme</h3>
+      <pre id="problemsList">Noch keine Probleme</pre>
+
+    </div>
+  </div>
+
+  <script>
+    async function callPostRobot() {
+      const r = await fetch('/robot', { method: 'POST' })
+      output(r)
+    }
+
+    async function callPostCleaner() {
+      const r = await fetch('/robot-cleaner', { method: 'POST' })
+      output(r)
+    }
+
+    async function callPostRepair() {
+      const r = await fetch('/robot-repair', { method: 'POST' })
+      output(r)
+    }
+
+    async function sendTestEvent() {
+      const event = {
+        x: Math.floor(Math.random() * 20),
+        y: Math.floor(Math.random() * 20),
+        type: Math.random() < 0.5 ? "SCHMUTZ" : "DEFEKT"
+      }
+      const r = await fetch('/event', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(event)
+      })
+      output(r)
+    }
+
+    async function callPostCleaner() {
+      const res = await fetch('/robot-cleaner', { method: 'POST' })
+      document.getElementById('output').textContent =
+        JSON.stringify(await res.json(), null, 2)
+    }
+
+    async function callPostRepair() {
+      const res = await fetch('/robot-repair', { method: 'POST' })
+      document.getElementById('output').textContent =
+        JSON.stringify(await res.json(), null, 2)
+    }
+
+    async function sendTestEvent() {
+      const event = {
+        x: Math.floor(Math.random() * 20),
+        y: Math.floor(Math.random() * 20),
+        type: Math.random() < 0.5 ? "SCHMUTZ" : "DEFEKT"
+      }
+
+      const res = await fetch('/event', {
+        method: 'POST',
+        headers: {
+          "Accept": "application/json",
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(event)
+      })
+
+      const data = await res.json()
+      document.getElementById('output').textContent = JSON.stringify(data, null, 2)
+    }
+    async function callGetMap() {
+      const r = await fetch('/map')
+      output(r)
+    }
+
+    async function callGetStatus() {
+      const r = await fetch('/status')
+      output(r)
+    }
+
+    async function output(res) {
+      document.getElementById('output').textContent =
+        JSON.stringify(await res.json(), null, 2)
+    }
+
+    function renderLists(data) {
+      document.getElementById('robotsSummary').textContent =
+        `Roboter aktiv: ${data.robots.length}`
+
+      document.getElementById('robotsList').textContent =
+        data.robots.length
+          ? data.robots.map(r =>
+              `#${r.id} [${r.role}] @ (${r.x},${r.y}) status=${r.status}`
+            ).join('\n')
+          : 'Noch keine Roboter'
+
+      document.getElementById('problemsList').textContent =
+        data.problems.length
+          ? data.problems.map(p =>
+              `#${p.ui_id} [${p.type}] @ (${p.x},${p.y}) status=${p.status}`
+            ).join('\n')
+          : 'Noch keine Probleme'
+    }
+
+    async function updateMap() {
+      const res = await fetch('/map')
+      const data = await res.json()
+
+      const grid = document.getElementById('grid')
+      grid.innerHTML = ''
+
+      data.map.forEach(row => {
+        for (const cell of row) {
+          const d = document.createElement('div')
+          d.classList.add('cell')
+
+          if (cell === '#') d.classList.add('wall')
+          else if (cell === '!') { d.style.background = '#550000'; d.textContent = '❌' }
+          else if (cell === '$') { d.style.background = '#553300'; d.textContent = '💩' }
+          else if (cell === 'C') { d.style.background = '#0044ff'; d.textContent = '🧼' }
+          else if (cell === 'R') { d.style.background = '#ffaa00'; d.textContent = '🛠️' }
+          else if (cell === 'D') { d.style.background = '#00ff00'; d.textContent = '🤖' }
+          else d.classList.add('free')
+
+          grid.appendChild(d)
+        }
+      })
+
+      renderLists(data)
+    }
+
+    updateMap()
+    setInterval(updateMap, 1000)
+  </script>
+</body>
+</html>

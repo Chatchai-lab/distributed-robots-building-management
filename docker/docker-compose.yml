@@ -1,0 +1,69 @@
+services:
+  vs-mqtt-broker:
+    image: eclipse-mosquitto:latest
+    container_name: vs-mqtt-broker
+    ports:
+      - "1883:1883"
+    networks:
+      - vs-net
+    command: mosquitto -c /mosquitto-no-auth.conf
+
+  vs-coordinator:
+    build:
+      context: ..
+      dockerfile: ./docker/coordinator/Dockerfile
+    container_name: vs-coordinator
+    ports:
+      - "8080:8080"
+      - "50050:50050"
+      - "8181:8181"
+    networks:
+      - vs-net
+
+  vs-detector:
+    build:
+      context: ..
+      dockerfile: ./docker/detector/Dockerfile
+    networks:
+      - vs-net
+    depends_on:
+      - vs-coordinator
+    deploy:
+      replicas: 4
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.gethostbyname('vs-mqtt-broker')"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  vs-cleaner:
+    build:
+      context: ..
+      dockerfile: ./docker/servicebot-cleaner/Dockerfile
+    networks:
+      - vs-net
+    depends_on:
+      vs-detector:
+        condition: service_healthy
+      vs-coordinator:
+        condition: service_started
+    deploy:
+      replicas: 2
+
+  vs-repair:
+    build:
+      context: ..
+      dockerfile: ./docker/servicebot-repair/Dockerfile
+    networks:
+      - vs-net
+    depends_on:
+      vs-detector:
+        condition: service_healthy
+      vs-coordinator:
+        condition: service_started
+    deploy:
+      replicas: 2
+
+networks:
+  vs-net:
+    driver: bridge

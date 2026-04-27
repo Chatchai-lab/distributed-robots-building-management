@@ -1,0 +1,7 @@
+grpcio
+grpcio-tools
+protobuf
+requests
+googleapis-common-protos
+six
+paho-mqtt
