@@ -32,8 +32,6 @@
 
 ## 1. Screenshots
 
-> Die folgenden Screenshots werden in [docs/images/](docs/images/) abgelegt und unten eingebunden.
-> **Aktuell sind dies Platzhalter** – bitte die echten Bilder mit den vorgesehenen Dateinamen ergänzen.
 
 ### 1.1 Web-Dashboard – Hauptansicht
 Zeigt das vollständige Koordinator-UI: oben die **Koordinator-API-Buttons**
