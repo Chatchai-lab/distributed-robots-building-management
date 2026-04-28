@@ -148,13 +148,15 @@ class ServiceBot:
             "ts": time.time(),
         }
 
-        self.mqtt.publish(f"tasks/claim/{pid}", json.dumps(claim))
-        print(f"[CLAIM] bot={self.robot_id} problem={pid} dist={dist}")
-
         with self.lock:
             if pid in self.claim_timer_started:
                 return
             self.claim_timer_started.add(pid)
+            # Eigenen Claim sofort lokal speichern
+            self.claims.setdefault(pid, []).append(claim)
+
+        self.mqtt.publish(f"tasks/claim/{pid}", json.dumps(claim))
+        print(f"[CLAIM] bot={self.robot_id} problem={pid} dist={dist}")
 
         threading.Timer(0.3, self.decide_winner, args=(pid,)).start()
 

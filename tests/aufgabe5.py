@@ -18,17 +18,20 @@ def test_decentralized_assignment_flow():
     def on_message(c, userdata, msg):
         received_assignments.append(json.loads(msg.payload.decode()))
 
-    client.subscribe("tasks/assigned/#")
     client.on_message = on_message
+    client.subscribe("tasks/assigned/#")
     client.loop_start()
+
+    # Sicherstellen, dass der Subscriber registriert ist
+    time.sleep(0.5)
 
     # Problem simulieren
     prob_id = str(uuid.uuid4())
     problem = {"id": prob_id, "type": "SCHMUTZ", "x": 1, "y": 1, "round": 1}
     client.publish("problems/new", json.dumps(problem))
 
-    # Zeit für Negotiation lassen
-    time.sleep(5)
+    # Zeit für Negotiation lassen: 0.3s claim-window + verarbeitung + sicherheit
+    time.sleep(2)
     client.loop_stop()
 
     # Ein Service-Bot muss sich selbst zugewiesen haben
